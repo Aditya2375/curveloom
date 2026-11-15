@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <meta name="referrer" content="no-referrer" />
+    <title>curveloom - yield changes, fewer dimensions</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script type="module" src="src/app.js"></script>
+  </head>
+  <body>
+    <main>
+      <header>
+        <a class="wordmark" href="./">curveloom <span>/ 18</span></a
+        ><span class="eyebrow">INVENTED YIELDS · COVARIANCE PCA</span>
+      </header>
+      <section class="hero">
+        <div>
+          <p class="eyebrow">SIX TENORS / 96 SYNTHETIC CHANGES</p>
+          <h1>Many maturities.<br />Fewer moving parts.</h1>
+        </div>
+        <p>
+          Find the directions in which an invented yield curve moves together.
+          Keep fewer directions, then inspect exactly what was left out.
+        </p>
+      </section>
+      <form id="controls">
+        <label
+          >Level-shape amplitude / bps<input
+            id="level"
+            type="number"
+            min="0"
+            max="12"
+            step="1"
+            value="8" /></label
+        ><label
+          >Slope-shape amplitude / bps<input
+            id="slope"
+            type="number"
+            min="0"
+            max="8"
+            step="1"
+            value="4" /></label
+        ><label
+          >Curve-shape amplitude / bps<input
+            id="curve"
+            type="number"
+            min="0"
+            max="6"
+            step="0.5"
+            value="2" /></label
+        ><label
+          >Ripple amplitude / bps<input
+            id="ripple"
+            type="number"
+            min="0"
+            max="3"
+            step="0.25"
+            value="1" /></label
+        ><label
+          >Fit prefix / changes<select id="train">
+            <option>48</option>
+            <option selected>72</option>
+          </select></label
+        ><label
+          >Keep / components<select id="keep">
+            <option>1</option>
+            <option>2</option>
+            <option selected>3</option>
+            <option>4</option>
+            <option>5</option>
+            <option>6</option>
+          </select></label
+        ><button type="submit">
+          Decompose <span aria-hidden="true">↗</span>
+        </button>
+      </form>
+      <p id="status" class="eyebrow" role="status" aria-live="polite"></p>
+      <p class="scope">
+        Invented observations, not Treasury or central-bank data. PCA fits
+        centered changes in basis points, not yield levels. 1 bp = 0.01
+        percentage point. Every tenor has the same bps scale and equal weight;
+        no variance standardization or maturity-spacing weights. Amplitude is
+        not standard deviation.
+      </p>
+      <section class="metrics" aria-label="PCA diagnostics">
+        <div>
+          <p>Fit variance captured</p>
+          <strong id="captured"></strong
+          ><small>Training covariance eigenvalues</small>
+        </div>
+        <div>
+          <p>Fit reconstruction RMSE</p>
+          <strong id="trainRmse"></strong
+          ><small>bps per tenor-observation</small>
+        </div>
+        <div>
+          <p>Held-out reconstruction RMSE</p>
+          <strong id="heldoutRmse"></strong
+          ><small>bps, contemporaneous inputs</small>
+        </div>
+        <div>
+          <p>Max eigen residual</p>
+          <strong id="eigenResidual"></strong
+          ><small>bps², numerical check only</small>
+        </div>
+      </section>
+      <section>
+        <div class="sectionhead">
+          <h2>01 / Directions, not economic laws</h2>
+          <p id="fitnote"></p>
+        </div>
+        <div class="plots">
+          <div>
+            <h3>First three estimated loading vectors</h3>
+            <svg
+              id="loadChart"
+              role="img"
+              aria-label="First three PCA unit eigenvectors against linear maturity in years"
+            ></svg>
+            <p class="legend">
+              <span>PC1 / solid</span><span>PC2 / dashed</span
+              ><span>PC3 / dotted</span>
+            </p>
+            <p class="caption">
+              Unit-length eigenvectors, not eigenvectors multiplied by
+              volatility. All three shown even when fewer are retained.
+              Horizontal axis is linear years, not equally spaced tenor
+              categories. Lines only connect the six tenor values.
+            </p>
+          </div>
+          <div>
+            <h3>Selected change / observed vs reconstruction</h3>
+            <svg
+              id="changeChart"
+              role="img"
+              aria-label="Observed and reconstructed six-tenor change against linear maturity in years"
+            ></svg>
+            <p class="legend">
+              <span>Observed / solid</span><span>Reconstruction / dashed</span>
+            </p>
+            <p class="caption" id="chartnote"></p>
+          </div>
+        </div>
+        <div
+          class="tablewrap"
+          tabindex="0"
+          aria-label="Six eigenvalues and variance shares, scroll all columns"
+        >
+          <table id="spectrum">
+            <thead>
+              <tr>
+                <th>Component</th>
+                <th>Eigenvalue / bps²</th>
+                <th>Fit variance / %</th>
+                <th>Cumulative / %</th>
+                <th>Retained?</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="caption">
+          Directions are ordered by training variance. Their signs are
+          arbitrary; for display the largest absolute loading is positive, with
+          first-tenor tie breaking. Repeated or close eigenvalues can make
+          individual directions unstable or non-unique. A zero-variance prefix
+          has no meaningful variance shares, shown N/A; its displayed loading
+          vectors are arbitrary numerical conventions, not measured factors. No
+          automatic level/slope/curvature labels are assigned to the fitted PCs.
+        </p>
+        <div
+          class="tablewrap"
+          tabindex="0"
+          aria-label="All six PCA loading vectors"
+        >
+          <table id="loadings">
+            <thead>
+              <tr>
+                <th>Unit eigenvector</th>
+                <th>0.25y</th>
+                <th>1y</th>
+                <th>2y</th>
+                <th>5y</th>
+                <th>10y</th>
+                <th>30y</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+      <section>
+        <div class="sectionhead">
+          <h2>02 / Pull a change apart</h2>
+          <p id="daynote"></p>
+        </div>
+        <label class="sliderlabel"
+          >Inspect change / 1 to 96<input
+            id="day"
+            type="range"
+            min="1"
+            max="96"
+            value="1"
+            step="1"
+        /></label>
+        <div
+          class="tablewrap"
+          tabindex="0"
+          aria-label="Selected scores and retained components"
+        >
+          <table id="scores">
+            <thead>
+              <tr>
+                <th>Component</th>
+                <th>Selected score / bps</th>
+                <th>Retained?</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div
+          class="tablewrap"
+          tabindex="0"
+          aria-label="Selected six-tenor contribution audit"
+        >
+          <table id="audit">
+            <thead>
+              <tr>
+                <th>Tenor / y</th>
+                <th>Observed / bps</th>
+                <th>Fit mean / bps</th>
+                <th>PC1 / bps</th>
+                <th>PC2 / bps</th>
+                <th>PC3 / bps</th>
+                <th>PC4 / bps</th>
+                <th>PC5 / bps</th>
+                <th>PC6 / bps</th>
+                <th>Reconstruction / bps</th>
+                <th>Residual / bps</th>
+                <th>Yield before / %</th>
+                <th>Yield after / %</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p id="equation" class="equation"></p>
+        <p class="caption">
+          Scroll horizontally for every contribution and the before/after
+          yields. Scores use the entire observed six-tenor change on that row,
+          centered by the frozen training mean. Reconstruct as mean + retained
+          score × loading contributions. "Omitted" means excluded, not a zero
+          score. Add the residual to recover the observed change. This
+          compression is not a yield forecast, portfolio return or trading
+          result. Display rounded to six decimals; calculation uses full
+          precision.
+        </p>
+        <details>
+          <summary>All 96 changes × six tenors / 576-row audit</summary>
+          <div
+            class="tablewrap ledger"
+            tabindex="0"
+            aria-label="Complete six-tenor change ledger, scroll all rows and columns"
+          >
+            <table id="ledger">
+              <thead>
+                <tr>
+                  <th>Change</th>
+                  <th>Split</th>
+                  <th>Tenor / y</th>
+                  <th>Observed / bps</th>
+                  <th>Reconstructed / bps</th>
+                  <th>Residual / bps</th>
+                  <th>Yield before / %</th>
+                  <th>Yield after / %</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </details>
+      </section>
+      <section>
+        <div class="sectionhead">
+          <h2>03 / Check the algebra, keep the limits</h2>
+          <p>Descriptive PCA, no economic identification</p>
+        </div>
+        <div
+          class="tablewrap"
+          tabindex="0"
+          aria-label="Model diagnostic identities"
+        >
+          <table id="diagnostics">
+            <thead>
+              <tr>
+                <th>Diagnostic</th>
+                <th>Value</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="method">
+          <div>
+            <h3>Changes, not levels.</h3>
+            <p>
+              Six tenors: 0.25, 1, 2, 5, 10 and 30 years. Generate 96
+              deterministic changes using cosine-shaped directions, correlated
+              time patterns and a small fixed drift. The amplitude controls
+              affect generating shapes, not fitted PC variances. The fitted
+              directions can mix those shapes.
+            </p>
+            <p>
+              Illustrative starting yields are 3 + 0.2 log(1 + tenor) percent.
+              Add each change / 100 to obtain the next yield in percent. Levels
+              are audit context only. No pricing, cash flows, duration, discount
+              factors, arbitrage-free construction or market calibration.
+            </p>
+          </div>
+          <div>
+            <h3>Fit, then freeze.</h3>
+            <p>
+              Subtract each tenor's mean from the first 48 or 72 changes. Sample
+              covariance C = XᵀX / (n−1). Largest-pivot Jacobi rotations find
+              all six eigenvectors. Sort eigenvalues descending; signs are fixed
+              only for reproducibility.
+            </p>
+            <p>
+              Project any row onto the fitted vectors and retain k components.
+              Keep the same training mean and vectors for later rows. Held-out
+              scores still require the contemporaneous observed change. Their
+              cross-covariances need not vanish outside training.
+            </p>
+          </div>
+          <div>
+            <h3>Variance is not certainty.</h3>
+            <p>
+              Fit variance captured = sum retained eigenvalues / covariance
+              trace. RMSE = sqrt(sum squared reconstruction residuals / (rows ×
+              6)). Training SSE equals (n−1) × sum discarded eigenvalues, up to
+              floating-point rounding.
+            </p>
+            <p>
+              PCA makes training scores uncorrelated, not independent or causal.
+              It minimizes squared training reconstruction error at fixed
+              dimension and scaling; it does not guarantee stable factors,
+              Gaussian changes, a hedge, an economic interpretation or future
+              performance. No confidence intervals, forecast or investment
+              advice.
+            </p>
+          </div>
+        </div>
+      </section>
+      <p class="sources">
+        Background:
+        <a
+          href="https://ocw.mit.edu/courses/18-642-topics-in-mathematics-with-applications-in-finance-fall-2024/mit18_642_f24_pset_analysis.pdf"
+          >MIT: yield-change PCA</a
+        >
+        ·
+        <a href="https://stat.cmu.edu/~larry/=sml/DimRed.pdf"
+          >CMU: dimension reduction</a
+        >
+        ·
+        <a href="https://encyclopediaofmath.org/wiki/Rotation_method"
+          >Jacobi rotation method</a
+        >. No external code, data, fonts or assets bundled.
+      </p>
+      <footer>
+        <span>curveloom / Java core + local browser mirror</span
+        ><span>MIT OR Apache-2.0 · No accounts, uploads or storage</span>
+      </footer>
+    </main>
+  </body>
+</html>
